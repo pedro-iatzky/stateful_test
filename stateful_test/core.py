@@ -275,7 +275,7 @@ class FlowPath(object):
     def run(self):
         """
         Run the Flow Path following the order given in the path list
-        :return:
+        :return: <dict> Returns the execution log
         """
         with flow_trace(self.log):
             for task in self.path:
@@ -283,3 +283,4 @@ class FlowPath(object):
                 self.log["executed_path"].append(task.name)
 
         self.__compute_log_aggregations()
+        return self.log
