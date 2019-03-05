@@ -1,2 +1,7 @@
 /.pytest_cache
 /tests/.pytest_cache
+
+build/
+dist/
+*.egg
+*.egg-info/
