@@ -1,0 +1,38 @@
+{
+  "status": "failed",
+  "path": ["a", "b", "c"],
+  "total_execution_time": 2000,
+  "total_verification_time": 700,
+  "total_elapsed_time": 2700,
+  "executed_path": ["a", "b", "c"],
+
+  "tasks": {
+    "a": {
+      "execution_time": 1500,
+      "verification_time": 300,
+      "status": {
+        "task": "success",
+        "verification": "failed"
+      }
+    },
+
+    "b": {
+      "execution_time": 500,
+      "verification_time": 400,
+      "status": {
+        "task": "success",
+        "verification": "failed"
+      }
+    },
+
+    "c": {
+      "execution_time": null,
+      "verification_time": null,
+      "status": {
+        "task": null,
+        "verification": null
+      }
+    }
+  }
+
+}
