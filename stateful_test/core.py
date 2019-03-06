@@ -1,4 +1,5 @@
 import abc
+import copy
 import contextlib
 import time
 from .helpers import cast_to_args, cast_to_kargs, format_time
@@ -44,7 +45,7 @@ def task_trace(log_dict, task_name):
     # What would be best than creating non idempotent functions in order to
     # build a library aimed to testing stateful systems
     t = time.time()
-    task_dict = TASK_DICT.copy()
+    task_dict = copy.deepcopy(TASK_DICT)
     log_dict["tasks"][task_name] = task_dict
     task_dict["status"]["task"] = "SUCCESS"
     try:
@@ -221,9 +222,9 @@ class FlowPath(object):
         calling the run function
         :param task_path: <list>.<Task>
         """
-        self.path = task_path if task_path else []
+        self.path = task_path.copy() if task_path else []
 
-        self.log = LOG_DICT.copy()
+        self.log = copy.deepcopy(LOG_DICT)
 
     def add_task(self, task):
         """
