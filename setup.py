@@ -14,5 +14,10 @@ setup(
         'dev': [
             'pytest>=3'
         ]
+    },
+    entry_points={
+        'console_scripts': [
+            'stateful_test = stateful_test.main:main'
+        ]
     }
 )
