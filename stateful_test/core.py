@@ -1,9 +1,9 @@
-import abc
 import copy
 import contextlib
 import time
-from .helpers import cast_to_args, cast_to_kargs, format_time
+from .helpers import cast_to_args, cast_to_kwargs, format_time
 from .log_config import LOG_DICT, TASK_DICT
+import traceback
 
 
 class TaskNotDefined(Exception):
@@ -83,10 +83,9 @@ def flow_trace(log_dict):
         yield
     except RunFailException as e:
         log_dict["status"] = "FAILED"
-        raise e
-    except Exception as e:
+    except Exception:
         log_dict["status"] = "ERROR"
-        raise e
+        traceback.print_exc()
     finally:
         log_dict["total_elapsed_time"] = format_time(t)
 
@@ -100,7 +99,6 @@ class TaskResult(object):
 
 class Task(object):
 
-    @abc.abstractmethod
     def __init__(self, name, task_function=None, task_args=None, task_kwargs=None,
                  result_function=None, result_args=None, result_kwargs=None):
         """
@@ -125,18 +123,18 @@ class Task(object):
 
         self.__task_function = task_function
         self.__task_args = cast_to_args(task_args)
-        self.__task_kwargs = cast_to_kargs(task_kwargs)
+        self.__task_kwargs = cast_to_kwargs(task_kwargs)
 
         self.__result_function = result_function
         self.__result_args = cast_to_args(result_args)
-        self.__result_kwargs = cast_to_kargs(result_kwargs)
+        self.__result_kwargs = cast_to_kwargs(result_kwargs)
 
         self.__result = None
         self.__task_run = None
 
     @property
     def result(self):
-        if not self.__result:
+        if self.__result is None:
             return TaskResult()
         else:
             return self.__result
@@ -171,7 +169,7 @@ class Task(object):
             # If there is not a defined a result function. It is assumed the task
             # has completed successfully
             return True
-        if not self.__result:
+        if self.__result is None:
             # If there isn't a result, the task was not run, and the result verification
             # cannot be called yet
             raise TaskNotRunError(self.name)
@@ -188,7 +186,7 @@ class Task(object):
                             " must be boolean".format(self.name))
         return fail_or_success
 
-    def add_execution_task(self, task_function, *args, **kwargs):
+    def add_execution_task(self, task_function, args=None, kwargs=None):
         """
         Add a execution task
         :param task_function: <function>
@@ -197,10 +195,10 @@ class Task(object):
         :return:
         """
         self.__task_function = task_function
-        self.__task_args = args
-        self.__task_kwargs = kwargs
+        self.__task_args = cast_to_args(args)
+        self.__task_kwargs = cast_to_kwargs(kwargs)
 
-    def add_result_function(self, result_function, *args, **kwargs):
+    def add_result_function(self, result_function, args=None, kwargs=None):
         """
         Add a result function to be exectude after the task. The return value
         must be a boolean
@@ -210,8 +208,8 @@ class Task(object):
         :return: <bool>
         """
         self.__result_function = result_function
-        self.__result_args = args
-        self.__result_kwargs = kwargs
+        self.__result_args = cast_to_args(args)
+        self.__result_kwargs = cast_to_kwargs(kwargs)
 
 
 class FlowPath(object):
@@ -278,6 +276,7 @@ class FlowPath(object):
         Run the Flow Path following the order given in the path list
         :return: <dict> Returns the execution log
         """
+        self.log["path"] = [t.name for t in self.path]
         with flow_trace(self.log):
             for task in self.path:
                 self.__run_task(task)
