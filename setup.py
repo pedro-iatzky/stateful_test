@@ -9,11 +9,14 @@ setup(
     description="A simpleframework for performing integration tests",
     packages=["stateful_test"],
     python_requires=">=3.5",
+    install_requires=[
+        'gevent>=1.4.0',
+    ],
     extras_require={
         'dotenv': ['python-dotenv'],
         'dev': [
             'pytest>=3',
-            'requests>=2.9.1'
+            'requests>=2.9.1',
         ]
     },
     entry_points={
