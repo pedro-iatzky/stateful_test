@@ -10,7 +10,7 @@ import os
 import sys
 from optparse import OptionParser
 
-from .core import FlowPath
+from .core import FlowPath, ConcurrentFlows
 
 
 def parse_options():
@@ -82,11 +82,23 @@ def find_flowfile(flowfile):
 
 def is_flowpath(tup):
     """
-    Takes (name, object) tuple, returns True if it's a public Locust subclass.
+        Takes (name, object) tuple, returns True if it's a public FlowPath subclass.
     """
     name, item = tup
     return bool(
         isinstance(item, FlowPath)
+        and not name.startswith('_')
+    )
+
+
+def is_concurrent_flows(tup):
+    """
+        Takes (name, object) tuple, returns True if it's a public ConcurrentFlows
+         subclass.
+    """
+    name, item = tup
+    return bool(
+        isinstance(item, ConcurrentFlows)
         and not name.startswith('_')
     )
 
@@ -137,8 +149,14 @@ def load_flowfile(path):
         sys.path.insert(index + 1, directory)
         del sys.path[0]
     # Return our two-tuple
-    flowpaths = dict(filter(is_flowpath, vars(imported).items()))
-    return imported.__doc__, flowpaths
+
+    concurrent_flows, flowpaths = dict(), dict()
+    for var_value in vars(imported).items():
+        if is_concurrent_flows(var_value):
+            concurrent_flows[var_value[0]] = var_value[1]
+        elif is_flowpath(var_value):
+            flowpaths[var_value[0]] = var_value[1]
+    return imported.__doc__, flowpaths, concurrent_flows
 
 
 def write_log(out_dict, output_file=None):
@@ -161,13 +179,17 @@ def main():
             " and see --help for available options.")
         sys.exit(1)
 
-    docstring, flowpaths = load_flowfile(flowfile)
+    docstring, flowpaths, concurrent_flows = load_flowfile(flowfile)
 
-    if not flowpaths:
-        logger.error("No FlowPath instances found!")
+    if not flowpaths and not concurrent_flows:
+        logger.error("No FlowPath or ConcurrentFlows instances found!")
         sys.exit(1)
 
     out_dict = {}
+    for path_name, obj in concurrent_flows.items():
+        logger.info("Starting execution of Concurrent Flows {}".format(path_name))
+        out_dict[path_name] = obj.run()
+
     for path_name, obj in flowpaths.items():
         logger.info("Starting execution of Flow Path {}".format(path_name))
         out_dict[path_name] = obj.run()

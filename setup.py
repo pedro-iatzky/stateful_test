@@ -12,7 +12,8 @@ setup(
     extras_require={
         'dotenv': ['python-dotenv'],
         'dev': [
-            'pytest>=3'
+            'pytest>=3',
+            'requests>=2.9.1'
         ]
     },
     entry_points={
