@@ -1,8 +1,11 @@
-import abc
+from gevent import monkey; monkey.patch_all()
+import gevent
+import copy
 import contextlib
 import time
-from .helpers import cast_to_args, cast_to_kargs, format_time
+from .helpers import cast_to_args, cast_to_kwargs, format_time
 from .log_config import LOG_DICT, TASK_DICT
+import traceback
 
 
 class TaskNotDefined(Exception):
@@ -44,7 +47,7 @@ def task_trace(log_dict, task_name):
     # What would be best than creating non idempotent functions in order to
     # build a library aimed to testing stateful systems
     t = time.time()
-    task_dict = TASK_DICT.copy()
+    task_dict = copy.deepcopy(TASK_DICT)
     log_dict["tasks"][task_name] = task_dict
     task_dict["status"]["task"] = "SUCCESS"
     try:
@@ -82,10 +85,9 @@ def flow_trace(log_dict):
         yield
     except RunFailException as e:
         log_dict["status"] = "FAILED"
-        raise e
-    except Exception as e:
+    except Exception:
         log_dict["status"] = "ERROR"
-        raise e
+        traceback.print_exc()
     finally:
         log_dict["total_elapsed_time"] = format_time(t)
 
@@ -99,7 +101,6 @@ class TaskResult(object):
 
 class Task(object):
 
-    @abc.abstractmethod
     def __init__(self, name, task_function=None, task_args=None, task_kwargs=None,
                  result_function=None, result_args=None, result_kwargs=None):
         """
@@ -124,18 +125,18 @@ class Task(object):
 
         self.__task_function = task_function
         self.__task_args = cast_to_args(task_args)
-        self.__task_kwargs = cast_to_kargs(task_kwargs)
+        self.__task_kwargs = cast_to_kwargs(task_kwargs)
 
         self.__result_function = result_function
         self.__result_args = cast_to_args(result_args)
-        self.__result_kwargs = cast_to_kargs(result_kwargs)
+        self.__result_kwargs = cast_to_kwargs(result_kwargs)
 
         self.__result = None
         self.__task_run = None
 
     @property
     def result(self):
-        if not self.__result:
+        if self.__result is None:
             return TaskResult()
         else:
             return self.__result
@@ -170,7 +171,7 @@ class Task(object):
             # If there is not a defined a result function. It is assumed the task
             # has completed successfully
             return True
-        if not self.__result:
+        if self.__result is None:
             # If there isn't a result, the task was not run, and the result verification
             # cannot be called yet
             raise TaskNotRunError(self.name)
@@ -187,7 +188,7 @@ class Task(object):
                             " must be boolean".format(self.name))
         return fail_or_success
 
-    def add_execution_task(self, task_function, *args, **kwargs):
+    def add_execution_task(self, task_function, args=None, kwargs=None):
         """
         Add a execution task
         :param task_function: <function>
@@ -196,10 +197,10 @@ class Task(object):
         :return:
         """
         self.__task_function = task_function
-        self.__task_args = args
-        self.__task_kwargs = kwargs
+        self.__task_args = cast_to_args(args)
+        self.__task_kwargs = cast_to_kwargs(kwargs)
 
-    def add_result_function(self, result_function, *args, **kwargs):
+    def add_result_function(self, result_function, args=None, kwargs=None):
         """
         Add a result function to be exectude after the task. The return value
         must be a boolean
@@ -209,8 +210,15 @@ class Task(object):
         :return: <bool>
         """
         self.__result_function = result_function
-        self.__result_args = args
-        self.__result_kwargs = kwargs
+        self.__result_args = cast_to_args(args)
+        self.__result_kwargs = cast_to_kwargs(kwargs)
+
+    def copy(self):
+        return Task(
+            self.name, task_function=self.__task_function, task_args=self.__task_args,
+            task_kwargs=self.__task_kwargs, result_function=self.__result_function,
+            result_args=self.__result_args, result_kwargs=self.__result_kwargs
+        )
 
 
 class FlowPath(object):
@@ -221,9 +229,9 @@ class FlowPath(object):
         calling the run function
         :param task_path: <list>.<Task>
         """
-        self.path = task_path if task_path else []
+        self.path = cast_to_args(task_path)
 
-        self.log = LOG_DICT.copy()
+        self.log = copy.deepcopy(LOG_DICT)
 
     def add_task(self, task):
         """
@@ -277,6 +285,7 @@ class FlowPath(object):
         Run the Flow Path following the order given in the path list
         :return: <dict> Returns the execution log
         """
+        self.log["path"] = [t.name for t in self.path]
         with flow_trace(self.log):
             for task in self.path:
                 self.__run_task(task)
@@ -284,3 +293,61 @@ class FlowPath(object):
 
         self.__compute_log_aggregations()
         return self.log
+
+    def copy(self):
+        tasks_copy = [t.copy() for t in self.path]
+        return FlowPath(tasks_copy)
+
+
+class ConcurrentFlows(object):
+    """
+    If you want to run concurrent flows, you can instantiate this class
+    with a dictionary of FlowPath instances
+    """
+    def __init__(self, flow_dict=None):
+        self.flow_list = {} if flow_dict is None else flow_dict
+
+        self.__logs = None
+
+    @property
+    def logs(self):
+        return self.__logs
+
+    @logs.setter
+    def logs(self, log_list):
+        self.__logs = {ld[0]: ld[1].value for ld in log_list}
+
+    def add_flow(self, flow_id, flow):
+        """
+        Add a flow path, or a list of flow paths
+        :param flow_id: <str>. A flow path identifier
+        :param flow: <list>.<FlowPath> or <FlowPath>
+        :return:
+        """
+        if isinstance(flow, list):
+            self.flow_list.extend(flow)
+        else:
+            self.flow_list.append(flow)
+
+    def __run_flows_at_once(self):
+        """
+        Run all the flow path at the same time.
+        :return:
+        """
+        id_list, path_jobs = [], []
+        for fid, flow_path in self.flow_list.items():
+            id_list.append(fid)
+            path_jobs.append(gevent.spawn(flow_path.run))
+        gevent.joinall(path_jobs)
+        self.logs = zip(id_list, path_jobs)
+
+    def run(self, options=None):
+        """
+        Run all the specified flows according to the passed options. The default
+        running behaviour is to run all the flow Paths at once.
+        :param options:
+        :return:
+        """
+        if not options:
+            self.__run_flows_at_once()
+        return self.logs

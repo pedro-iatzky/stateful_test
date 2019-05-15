@@ -12,7 +12,7 @@ def cast_to_args(arg_values):
         return [arg_values]
 
 
-def cast_to_kargs(kwarg_values):
+def cast_to_kwargs(kwarg_values):
     if not kwarg_values:
         return {}
     elif isinstance(kwarg_values, dict):
