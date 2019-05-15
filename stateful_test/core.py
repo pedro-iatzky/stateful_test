@@ -1,3 +1,5 @@
+from gevent import monkey; monkey.patch_all()
+import gevent
 import copy
 import contextlib
 import time
@@ -211,6 +213,13 @@ class Task(object):
         self.__result_args = cast_to_args(args)
         self.__result_kwargs = cast_to_kwargs(kwargs)
 
+    def copy(self):
+        return Task(
+            self.name, task_function=self.__task_function, task_args=self.__task_args,
+            task_kwargs=self.__task_kwargs, result_function=self.__result_function,
+            result_args=self.__result_args, result_kwargs=self.__result_kwargs
+        )
+
 
 class FlowPath(object):
 
@@ -220,7 +229,7 @@ class FlowPath(object):
         calling the run function
         :param task_path: <list>.<Task>
         """
-        self.path = task_path.copy() if task_path else []
+        self.path = cast_to_args(task_path)
 
         self.log = copy.deepcopy(LOG_DICT)
 
@@ -284,3 +293,61 @@ class FlowPath(object):
 
         self.__compute_log_aggregations()
         return self.log
+
+    def copy(self):
+        tasks_copy = [t.copy() for t in self.path]
+        return FlowPath(tasks_copy)
+
+
+class ConcurrentFlows(object):
+    """
+    If you want to run concurrent flows, you can instantiate this class
+    with a dictionary of FlowPath instances
+    """
+    def __init__(self, flow_dict=None):
+        self.flow_list = {} if flow_dict is None else flow_dict
+
+        self.__logs = None
+
+    @property
+    def logs(self):
+        return self.__logs
+
+    @logs.setter
+    def logs(self, log_list):
+        self.__logs = {ld[0]: ld[1].value for ld in log_list}
+
+    def add_flow(self, flow_id, flow):
+        """
+        Add a flow path, or a list of flow paths
+        :param flow_id: <str>. A flow path identifier
+        :param flow: <list>.<FlowPath> or <FlowPath>
+        :return:
+        """
+        if isinstance(flow, list):
+            self.flow_list.extend(flow)
+        else:
+            self.flow_list.append(flow)
+
+    def __run_flows_at_once(self):
+        """
+        Run all the flow path at the same time.
+        :return:
+        """
+        id_list, path_jobs = [], []
+        for fid, flow_path in self.flow_list.items():
+            id_list.append(fid)
+            path_jobs.append(gevent.spawn(flow_path.run))
+        gevent.joinall(path_jobs)
+        self.logs = zip(id_list, path_jobs)
+
+    def run(self, options=None):
+        """
+        Run all the specified flows according to the passed options. The default
+        running behaviour is to run all the flow Paths at once.
+        :param options:
+        :return:
+        """
+        if not options:
+            self.__run_flows_at_once()
+        return self.logs
