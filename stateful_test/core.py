@@ -225,7 +225,7 @@ class FlowPath(object):
 
     def __init__(self, task_path):
         """
-        This is the flow the tasks will follow. A logging will collected when
+        This is the flow the tasks will follow. A logging will be collected when
         calling the run function
         :param task_path: <list>.<Task>
         """
